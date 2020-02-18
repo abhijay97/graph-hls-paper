@@ -3,15 +3,22 @@ from layers.simple import GarNet
 
 def make_model(n_vert, n_feat, n_class=2):
     n_aggregators = 4
-    n_filters = 4
-    n_propagate = 4
+    n_filters = 8
+    n_propagate = 8
     
     x = keras.layers.Input(shape=(n_vert, n_feat))
     n = keras.layers.Input(shape=(1,), dtype='int32')
     inputs = [x, n]
     
     v = inputs
-    v = GarNet(n_aggregators, n_filters, n_propagate, collapse='mean', input_format='xn', name='gar_1')(v)
+    v = [GarNet(4,8,8,input_format='xn', name='gar_1')(v), n]
+    v = [GarNet(4,8,8,input_format='xn', name='gar_2')(v), n]
+   # v = [GarNet(8,8,8,input_format='xn', name='gar_3')(v), n]
+   # v = [GarNet(8,8,8,input_format='xn', name='gar_4')(v), n]
+   # v = [GarNet(8,8,8,input_format='xn', name='gar_5')(v), n]
+   # v = [GarNet(8,8,8,input_format='xn', name='gar_6')(v), n]
+    v = GarNet(n_aggregators, n_filters, n_propagate, collapse='mean', input_format='xn', name='gar_7')(v)
+    v = keras.layers.Dense(8, activation='relu')(v)
     if n_class == 2:
         v = keras.layers.Dense(1, activation='sigmoid')(v)
     else:
