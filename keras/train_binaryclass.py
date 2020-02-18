@@ -1,6 +1,16 @@
 #!/usr/bin/env python
 
 from __future__ import absolute_import, division, print_function, unicode_literals
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+import tensorflow as tf
+gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5)
+sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+import keras
+from keras import backend as K
+K.set_session(sess)
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau, TerminateOnNaN
+
 
 import sys
 import keras
@@ -35,9 +45,13 @@ if __name__ == '__main__':
     if args.ngpu > 1:
         model = keras.utils.multi_gpu_model(model_single, args.ngpu)
     
-    optimizer = keras.optimizers.Adam(lr=0.00005)
+    optimizer = keras.optimizers.Adam(lr=0.005)
     
-    model.compile(optimizer=optimizer, loss=make_loss(n_class))
+    model.compile(optimizer=optimizer, loss=make_loss(n_class),metrics=['acc'])
+    print(model.summary())
+    model_json = model.to_json()
+    with open("model_binary_wtb.json", "w") as json_file:
+        json_file.write(model_json)
 
     if args.use_generator:
         if args.input_type == 'h5':
@@ -48,6 +62,7 @@ if __name__ == '__main__':
             from generators.uproot_jagged_keep import make_generator
 
         train_gen, n_train_steps = make_generator(args.train_path, args.batch_size, features=features, n_vert_max=n_vert_max, dataset_name=args.input_name)
+        print(' this is train gen', train_gen)
         fit_kwargs = {'steps_per_epoch': n_train_steps, 'epochs': args.num_epochs}
 
         if args.validation_path:
@@ -55,7 +70,7 @@ if __name__ == '__main__':
             fit_kwargs['validation_data'] = valid_gen
             fit_kwargs['validation_steps'] = n_valid_steps
 
-        model.fit_generator(train_gen, **fit_kwargs)
+        model.fit_generator(train_gen, **fit_kwargs, callbacks=[EarlyStopping(monitor='val_loss',patience=5),ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, verbose=1)])
 
     else:
         if args.input_type == 'h5':
