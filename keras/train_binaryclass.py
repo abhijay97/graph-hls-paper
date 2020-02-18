@@ -4,16 +4,17 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 import tensorflow as tf
-gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5)
-sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
-import keras
-from keras import backend as K
-K.set_session(sess)
-from keras.callbacks import EarlyStopping, ReduceLROnPlateau, TerminateOnNaN
+#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5)
+#sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+#import keras
+#from keras import backend as K
+#K.set_session(sess)
+from tensorflow import keras
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, TerminateOnNaN
 
 
 import sys
-import keras
+#import keras
 
 from models.binaryclass_simple import make_model, make_loss
 
@@ -62,7 +63,7 @@ if __name__ == '__main__':
             from generators.uproot_jagged_keep import make_generator
 
         train_gen, n_train_steps = make_generator(args.train_path, args.batch_size, features=features, n_vert_max=n_vert_max, dataset_name=args.input_name)
-        print(' this is train gen', train_gen)
+       # print(' this is train gen', train_gen)
         fit_kwargs = {'steps_per_epoch': n_train_steps, 'epochs': args.num_epochs}
 
         if args.validation_path:

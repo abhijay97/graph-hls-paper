@@ -1,3 +1,6 @@
 [submodule "miniCalo"]
 	path = miniCalo
 	url = https://github.com/jkiesele/miniCalo
+[submodule "qkeras"]
+	path = qkeras
+	url = https://github.com/google/qkeras.git

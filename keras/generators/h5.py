@@ -1,6 +1,6 @@
 import random
 import h5py
-
+import numpy as np
 def make_generator(paths, batch_size, format='xn', features=None, n_vert_max=256, y_dtype=np.int, y_features=None, dataset_name='events'):
     paths = list(paths)
 
@@ -21,14 +21,14 @@ def make_generator(paths, batch_size, format='xn', features=None, n_vert_max=256
                         if features is None:
                             x = f['x'][start:end]
                         else:
-                            x = f['x'][start:end][, :, features]
+                            x = f['x'][start:end][ :, features]
 
                         if y_features is None:
                             y = f['y'][start:end]
                         else:
                             y = f['y'][start:end][:, y_features]
 
-                        yield x, f['n'][start:end]], y
+                        yield x, f['n'][start:end], y
 
                         start = end
                         end += batch_size
