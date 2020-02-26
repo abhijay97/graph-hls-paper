@@ -1,8 +1,8 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import math
-import keras
-import keras.backend as K
+from tensorflow import keras
+import tensorflow.keras.backend as K
 
 from debug_flag import DEBUG
 debug_summarize = None
@@ -11,10 +11,10 @@ class GarNet(keras.layers.Layer):
     def __init__(self, n_aggregators, n_filters, n_propagate, collapse=None, input_format='xn', discretize_distance=False, output_activation=None, mean_by_nvert=False, **kwargs):
         super(GarNet, self).__init__(**kwargs)
 
-        self.n_aggregators = n_aggregators
-        self.n_filters = n_filters
-        self.n_propagate = n_propagate
+        self._setup_aux_params(collapse, input_format, discretize_distance, mean_by_nvert)
+        self._setup_transforms(n_aggregators, n_filters, n_propagate, output_activation)
 
+    def _setup_aux_params(self, collapse, input_format, discretize_distance, mean_by_nvert):
         if collapse is None:
             self.collapse = None
         elif collapse in ['mean', 'sum', 'max']:
@@ -26,6 +26,7 @@ class GarNet(keras.layers.Layer):
         self.discretize_distance = discretize_distance
         self.mean_by_nvert = mean_by_nvert
 
+    def _setup_transforms(self, n_aggregators, n_filters, n_propagate, output_activation):
         self.input_feature_transform = keras.layers.Dense(n_propagate, name=self.name+'/FLR')
         self.aggregator_distance = keras.layers.Dense(n_aggregators, name=self.name+'/S')
         self.output_feature_transform = keras.layers.Dense(n_filters, activation=output_activation, name=self.name+'/Fout')
@@ -43,15 +44,30 @@ class GarNet(keras.layers.Layer):
             data_shape, _, _ = input_shape
             data_shape = data_shape[:2] + (data_shape[2] + 1,)
 
-        self.input_feature_transform.build(data_shape)
-        self.aggregator_distance.build(data_shape)
-        self.output_feature_transform.build(data_shape[:2] + (self.n_aggregators * self.n_propagate,))
+        self._build_transforms(data_shape)
 
         for layer in self._sublayers:
             self._trainable_weights.extend(layer.trainable_weights)
             self._non_trainable_weights.extend(layer.non_trainable_weights)
 
+    def _build_transforms(self, data_shape):
+        self.input_feature_transform.build(data_shape)
+        self.aggregator_distance.build(data_shape)
+        self.output_feature_transform.build(data_shape[:2] + (self.aggregator_distance.units * self.input_feature_transform.units,))
+
     def call(self, x):
+        data, num_vertex, vertex_mask = self._unpack_input(x)
+
+        output = self._garnet(data, num_vertex, vertex_mask,
+                              self.input_feature_transform,
+                              self.aggregator_distance,
+                              self.output_feature_transform)
+
+        output = self._collapse_output(output)
+
+        return output
+
+    def _unpack_input(self, x):
         if self.input_format == 'x':
             data = x
 
@@ -79,8 +95,11 @@ class GarNet(keras.layers.Layer):
         if DEBUG:
             vertex_mask = K.print_tensor(vertex_mask, message='vertex_mask is ', summarize=debug_summarize)
 
-        features = self.input_feature_transform(data) # (B, V, F)
-        distance = self.aggregator_distance(data) # (B, V, S)
+        return data, num_vertex, vertex_mask
+
+    def _garnet(self, data, num_vertex, vertex_mask, in_transform, d_compute, out_transform):
+        features = in_transform(data) # (B, V, F)
+        distance = d_compute(data) # (B, V, S)
 
         if DEBUG:
             features = K.print_tensor(features, message='features is ', summarize=debug_summarize)
@@ -100,8 +119,8 @@ class GarNet(keras.layers.Layer):
             def graph_mean(out, axis):
                 s = K.sum(out, axis=axis)
                 # reshape just to enable broadcasting
-                s = K.reshape(s, (-1, self.n_aggregators * self.n_propagate)) / num_vertex
-                s = K.reshape(s, (-1, self.n_aggregators, self.n_propagate))
+                s = K.reshape(s, (-1, d_compute.units * in_transform.units)) / num_vertex
+                s = K.reshape(s, (-1, d_compute.units, in_transform.units))
                 return s
         else:
             graph_mean = K.mean
@@ -119,24 +138,28 @@ class GarNet(keras.layers.Layer):
         if DEBUG:
             updated_features = K.print_tensor(updated_features, message='updated_features is ', summarize=debug_summarize)
 
-        output = vertex_mask * self.output_feature_transform(updated_features)
+        return vertex_mask * out_transform(updated_features)
 
+    def _collapse_output(self, output):
         if self.collapse == 'mean':
             if self.mean_by_nvert:
                 output = K.sum(output, axis=1) / num_vertex
             else:
                 output = K.mean(output, axis=1)
         elif self.collapse == 'sum': 
-            output = K.sum(output, axis=1)
+           output = K.sum(output, axis=1)
         elif self.collapse == 'max':
             output = K.max(output, axis=1)
 
         if DEBUG:
-            output = K.print_tensor(output, message='output is ', summarize=debug_summarize)
+            output = K.print_tensor(output, message='output is ', summarize=-1)
 
         return output
 
     def compute_output_shape(self, input_shape):
+        return self._get_output_shape(input_shape, self.output_feature_transform)
+
+    def _get_output_shape(self, input_shape, out_transform):
         if self.input_format == 'x':
             data_shape = input_shape
         elif self.input_format == 'xn':
@@ -145,25 +168,33 @@ class GarNet(keras.layers.Layer):
             data_shape, _, _ = input_shape
 
         if self.collapse is None:
-            return data_shape[:2] + (self.n_filters,)
+            return data_shape[:2] + (out_transform.units,)
         else:
-            return (data_shape[0], self.n_filters)
+            return (data_shape[0], out_transform.units)
 
     def get_config(self):
         config = super(GarNet, self).get_config()
+
         config.update({
-            'n_aggregators': self.n_aggregators,
-            'n_filters': self.n_filters,
-            'n_propagate': self.n_propagate,
             'collapse': self.collapse,
             'input_format': self.input_format,
             'discretize_distance': self.discretize_distance,
             'mean_by_nvert': self.mean_by_nvert
         })
 
+        self._add_transform_config(config)
+
         return config
 
-    def _apply_edge_weights(self, features, edge_weights, aggregation=None):
+    def _add_transform_config(self, config):
+        config.update({
+            'n_aggregators': self.aggregator_distance.units,
+            'n_filters': self.output_feature_transform.units,
+            'n_propagate': self.input_feature_transform.units
+        })
+
+    @staticmethod
+    def _apply_edge_weights(features, edge_weights, aggregation=None):
         features = K.expand_dims(features, axis=1) # (B, 1, v, f)
         edge_weights = K.expand_dims(edge_weights, axis=3) # (B, u, v, 1)
 

@@ -47,12 +47,16 @@ if __name__ == '__main__':
     #print(' actually loaded')
     #model2 = keras.models.load_model('results2/model_de.h5',custom_objects={'gar_1': GarNet, 'gar_2':GarNet})
     print('loaded')
+
+
     model = make_model(n_vert_max, n_feat=4, n_class=n_class)
     print(model.summary())
+    
+
     #model.layers[5].set_weights(model2.layers[5].get_weights())
-    model_json = model.to_json()
-    with open("results3/model_dense.json", "w") as json_file:
-        json_file.write(model_json)
+    #model_json = model.to_json()
+   # with open("results3/model_dense.json", "w") as json_file:
+    #    json_file.write(model_json)
         
     print('saving json')
     model_single = model
@@ -82,7 +86,8 @@ if __name__ == '__main__':
             valid_gen, n_valid_steps = make_generator(args.validation_path, args.batch_size, features=features, n_vert_max=n_vert_max, dataset_name=args.input_name)
             fit_kwargs['validation_data'] = valid_gen
             fit_kwargs['validation_steps'] = n_valid_steps
-        md_s = ModelCheckpoint('/afs/cern.ch/work/a/abgupta/graph_f/g5/graph-hls-paper/keras/results3/dense_weights.h5',save_best_only=True, save_weights_only=True, monitor='val_loss', model='min', verbose=1)
+
+        md_s = ModelCheckpoint(args.out_path,save_best_only=True, save_weights_only=True, monitor='val_loss', model='min', verbose=1)
         callbacks = [EarlyStopping(monitor='val_loss',patience=7, verbose=1),ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=7, verbose=1), md_s]
         fit_kwargs['callbacks'] = callbacks
         print(fit_kwargs)
