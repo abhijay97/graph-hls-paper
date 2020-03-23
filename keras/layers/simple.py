@@ -3,7 +3,8 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import math
 from tensorflow import keras
 import tensorflow.keras.backend as K
-
+from qkeras import *
+import layers.dense_hack
 from debug_flag import DEBUG
 debug_summarize = None
 
@@ -27,9 +28,12 @@ class GarNet(keras.layers.Layer):
         self.mean_by_nvert = mean_by_nvert
 
     def _setup_transforms(self, n_aggregators, n_filters, n_propagate, output_activation):
-        self.input_feature_transform = keras.layers.Dense(n_propagate, name=self.name+'/FLR')
-        self.aggregator_distance = keras.layers.Dense(n_aggregators, name=self.name+'/S')
-        self.output_feature_transform = keras.layers.Dense(n_filters, activation=output_activation, name=self.name+'/Fout')
+        self.input_feature_transform = QDense(n_propagate, kernel_quantizer=ternary(1),bias_quantizer=ternary(1), name='FLR')
+        self.aggregator_distance = keras.layers.Dense(n_aggregators, name='S')
+        self.output_feature_transform = QDense(n_filters, kernel_quantizer=ternary(1),bias_quantizer=ternary(1), name='Fout')
+        #self.input_feature_transform = keras.layers.Dense(n_propagate, name='FLR')
+        #self.aggregator_distance = keras.layers.Dense(n_aggregators, name='S')
+        #self.output_feature_transform = keras.layers.Dense(n_filters, activation=output_activation, name='Fout')
 
         self._sublayers = [self.input_feature_transform, self.aggregator_distance, self.output_feature_transform]
 
@@ -210,6 +214,6 @@ class GarNet(keras.layers.Layer):
         if aggregation:
             out = aggregation(out, axis=2) # (B, u, f)
         else:
-            out = K.reshape(out, (-1, edge_weights.shape[1].value, features.shape[-1].value * features.shape[-2].value))
-        
+            out = K.reshape(out, (-1, edge_weights.shape[1], features.shape[-1] * features.shape[-2]))  # for keras = .shape[].value
+            
         return out
