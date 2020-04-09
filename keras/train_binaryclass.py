@@ -2,11 +2,14 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 import os
-os.environ['CUDA_VISIBLE_DEVICES']='5'
+os.environ['CUDA_VISIBLE_DEVICES']='4'
 import sys
 from tensorflow import keras
 from layers.simple import GarNet
 from models.binaryclass_simple import make_model, make_loss
+#from tensorflow_model_optimization.sparsity import keras as prune
+from tensorflow_model_optimization.sparsity import keras as sparsity
+from tensorflow.keras.models import model_from_json
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
@@ -31,11 +34,14 @@ if __name__ == '__main__':
     #features = [0, 1, 2, 3]
     features = None
 
-    model = make_model(n_vert_max, n_feat=4, n_class=n_class)
-    model2 = keras.models.load_model('model_dbqg.h5', custom_objects={'GarNet':GarNet})
-    model.layers[2].set_weights(model2.layers[2].get_weights())
-    model.layers[3].set_weights(model2.layers[3].get_weights())
-    model.layers[4].set_weights(model2.layers[4].get_weights())
+    #model = make_model(n_vert_max, n_feat=4, n_class=n_class)
+    with open('model_dense.json', 'r') as f:
+        model = model_from_json(f.read(), custom_objects={'GarNet':GarNet})
+    model = keras.models.load_model('model_dense.h5', custom_objects={'GarNet':GarNet})  #model_dbqg
+    
+    #model.layers[2].set_weights(model2.layers[2].get_weights())
+    #model.layers[3].set_weights(model2.layers[3].get_weights())
+    #model.layers[4].set_weights(model2.layers[4].get_weights())
     #model2 =
     print(model.summary())
     print('stop')
@@ -43,10 +49,16 @@ if __name__ == '__main__':
     if args.ngpu > 1:
         model = keras.utils.multi_gpu_model(model_single, args.ngpu)
     
-    optimizer = keras.optimizers.Adam(lr=0.00005)
-    
-    model.compile(optimizer=optimizer, loss=make_loss(n_class),metrics=['acc'])
+    optimizer = keras.optimizers.Adam(lr=0.0005)
+    new_pruning_params = {'pruning_schedule': sparsity.PolynomialDecay(initial_sparsity=0.5,final_sparsity=0.9,begin_step=0,end_step=2000,frequency=100)}
 
+    prune_model = sparsity.prune_low_magnitude(model, **new_pruning_params)
+    #prune_model = model
+    prune_model.summary()
+    prune_model.compile(optimizer=optimizer, loss=make_loss(n_class),metrics=['acc'])
+    #model_json = prune_model.to_json()
+    #with open("model_dense.json", "w") as json_file:
+    #    json_file.write(model_json)
     if args.use_generator:
         if args.input_type == 'h5':
             from generators.h5 import make_generator
@@ -62,8 +74,8 @@ if __name__ == '__main__':
             valid_gen, n_valid_steps = make_generator(args.validation_path, args.batch_size, features=features, n_vert_max=n_vert_max, dataset_name=args.input_name)
             fit_kwargs['validation_data'] = valid_gen
             fit_kwargs['validation_steps'] = n_valid_steps
-
-        model.fit_generator(train_gen, **fit_kwargs)
+        callbacks = [sparsity.UpdatePruningStep()]
+        prune_model.fit_generator(train_gen, **fit_kwargs, callbacks=callbacks)
 
     else:
         if args.input_type == 'h5':

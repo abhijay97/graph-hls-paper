@@ -7,6 +7,10 @@ from qkeras import *
 import layers.dense_hack
 from debug_flag import DEBUG
 debug_summarize = None
+from tensorflow_model_optimization.sparsity import keras as prune
+#from tensorflow_model_optimization.python.core.sparsity.keras import prune
+#from tensorflow_model_optimization.python.core.sparsity.keras import pruning_schedule
+#ConstantSparsity = pruning_schedule.ConstantSparsity
 
 class GarNet(keras.layers.Layer):
     def __init__(self, n_aggregators, n_filters, n_propagate, collapse=None, input_format='xn', discretize_distance=False, output_activation=None, mean_by_nvert=False, **kwargs):
@@ -28,12 +32,15 @@ class GarNet(keras.layers.Layer):
         self.mean_by_nvert = mean_by_nvert
 
     def _setup_transforms(self, n_aggregators, n_filters, n_propagate, output_activation):
-        self.input_feature_transform = QDense(n_propagate, kernel_quantizer=ternary(1),bias_quantizer=ternary(1), name='FLR')
-        self.aggregator_distance = keras.layers.Dense(n_aggregators, name='S')
-        self.output_feature_transform = QDense(n_filters, kernel_quantizer=ternary(1),bias_quantizer=ternary(1), name='Fout')
-        #self.input_feature_transform = keras.layers.Dense(n_propagate, name='FLR')
+        pruning_params = {'pruning_schedule': prune.PolynomialDecay(initial_sparsity=0.50,final_sparsity=0.9, begin_step=2000,end_step=2734, frequency=100)}
+        #pruning_params = {'pruning_schedule': ConstantSparsity(0.75, begin_step=2000, frequency=100)}
+        #self.input_feature_transform = prune.prune_low_magnitude(QDense(n_propagate, kernel_quantizer=binary(1),bias_quantizer=binary(1), name='FLR'), **pruning_params)
         #self.aggregator_distance = keras.layers.Dense(n_aggregators, name='S')
-        #self.output_feature_transform = keras.layers.Dense(n_filters, activation=output_activation, name='Fout')
+        #self.output_feature_transform = prune.prune_low_magnitude(QDense(n_filters, kernel_quantizer=binary(1),bias_quantizer=binary(1), name='Fout'), **pruning_params)
+        self.input_feature_transform = prune.prune_low_magnitude(keras.layers.Dense(n_propagate, name='FLR'), **pruning_params)
+        #self.input_feature_transform = keras.layers.Dense(n_propagate, name='FLR')
+        self.aggregator_distance = keras.layers.Dense(n_aggregators, name='S')
+        self.output_feature_transform = keras.layers.Dense(n_filters, activation=output_activation, name='Fout')
 
         self._sublayers = [self.input_feature_transform, self.aggregator_distance, self.output_feature_transform]
 
@@ -57,7 +64,8 @@ class GarNet(keras.layers.Layer):
     def _build_transforms(self, data_shape):
         self.input_feature_transform.build(data_shape)
         self.aggregator_distance.build(data_shape)
-        self.output_feature_transform.build(data_shape[:2] + (self.aggregator_distance.units * self.input_feature_transform.units,))
+       # print("agg dist and ip ft tran",self.aggregator_distance.units, self.input_feature_transform.units)
+        self.output_feature_transform.build(data_shape[:2] + (4 * 8,))
 
     def call(self, x):
         data, num_vertex, vertex_mask = self._unpack_input(x)
