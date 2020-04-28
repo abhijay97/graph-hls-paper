@@ -35,24 +35,15 @@ if __name__ == '__main__':
     features = None
 
     model = make_model(n_vert_max, n_feat=4, n_class=n_class)
-    #with open('model_dense.json', 'r') as f:
-    #    model = model_from_json(f.read(), custom_objects={'GarNet':GarNet})
-    
-    # load dense model for quantization
-    #model = keras.models.load_model('model_dense.h5', custom_objects={'GarNet':GarNet}) 
-    #model.layers[2].set_weights(model2.layers[2].get_weights())
-    #model.layers[3].set_weights(model2.layers[3].get_weights())
-    #model.layers[4].set_weights(model2.layers[4].get_weights())
-    
     print(model.summary())
     model_single = model
     if args.ngpu > 1:
         model = keras.utils.multi_gpu_model(model_single, args.ngpu)
     
     optimizer = keras.optimizers.Adam(lr=0.0005)
-    #prune_model = model
-    #prune_model.summary()
-    model.compile(optimizer=optimizer, loss=make_loss(n_class),metrics=['acc'])
+    prune_model = model
+    prune_model.summary()
+    prune_model.compile(optimizer=optimizer, loss=make_loss(n_class),metrics=['acc'])
     #model_json = prune_model.to_json()
     #with open("model_dense.json", "w") as json_file:
     #    json_file.write(model_json)
@@ -92,4 +83,7 @@ if __name__ == '__main__':
         model.fit(inputs, truth, **fit_kwargs)
     
     if args.out_path:
-        model.save(args.out_path)
+        
+        final_model = sparsity.strip_pruning(prune_model)
+        final_model.summary()
+        prune_model.save(args.out_path)
